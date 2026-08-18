@@ -36,9 +36,20 @@ export function ExportModal({ clip, videoTitle, videoUrl = "", isOpen, onClose }
   const [renderProgress, setRenderProgress] = useState(0);
   const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(null);
   const [copiedType, setCopiedType] = useState<string | null>(null);
+  const [uploadedVideoUrl, setUploadedVideoUrl] = useState<string | null>(null);
 
   const videoPlayerRef = useRef<HTMLVideoElement | null>(null);
   const sourceVideoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    videoFileStore.getObjectUrl().then((url) => {
+      if (active) setUploadedVideoUrl(url);
+    });
+    return () => {
+      active = false;
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     return () => {
@@ -51,7 +62,6 @@ export function ExportModal({ clip, videoTitle, videoUrl = "", isOpen, onClose }
   if (!isOpen) return null;
 
   const youtubeId = videoUrl ? getYouTubeVideoId(videoUrl) : null;
-  const uploadedVideoUrl = videoFileStore.getObjectUrl();
 
   const getCanvasDimensions = () => {
     if (aspectRatio === "9:16") return resolution === "1080p" ? { w: 1080, h: 1920 } : { w: 720, h: 1280 };

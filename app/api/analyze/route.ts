@@ -1,24 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
 import { analyzeMockVideo } from "@/lib/ai/mockAnalyzer";
-
-// INTEGRATION POINT: Replace analyzeMockVideo with real pipeline:
-// 1. Download video (yt-dlp for YouTube, or save upload)
-// 2. Extract audio (FFmpeg)
-// 3. Transcribe (Whisper API or local model)
-// 4. Analyze transcript (GPT-4 / Gemini)
-// 5. Score moments (viralScorer.ts)
-// 6. Return results
+import ytdl from "@distube/ytdl-core";
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { url, fileName, durationSeconds } = body;
+    const { url, fileName } = body;
 
     if (!url && !fileName) {
       return NextResponse.json(
         { error: "Provide a YouTube URL or file name." },
         { status: 400 }
       );
+    }
+
+    let detectedTitle = fileName || "Video";
+    let detectedDuration = 1800; // default 30 mins
+
+    // Extract real YouTube title and duration if valid YouTube URL
+    if (url && ytdl.validateURL(url)) {
+      try {
+        const info = await ytdl.getBasicInfo(url);
+        detectedTitle = info.videoDetails.title || detectedTitle;
+        detectedDuration = parseInt(info.videoDetails.lengthSeconds, 10) || detectedDuration;
+      } catch (ytErr) {
+        console.warn("Could not fetch YouTube info via ytdl, falling back:", ytErr);
+      }
     }
 
     // Collect progress events
@@ -28,9 +35,13 @@ export async function POST(req: NextRequest) {
     };
 
     const result = await analyzeMockVideo(
-      { url, fileName, durationSeconds },
+      { url, fileName: detectedTitle, durationSeconds: detectedDuration },
       onProgress
     );
+
+    // Ensure title matches detected real YouTube title
+    result.videoMetadata.title = detectedTitle;
+    result.videoMetadata.durationSeconds = detectedDuration;
 
     return NextResponse.json({ result, progressLog });
   } catch (err) {

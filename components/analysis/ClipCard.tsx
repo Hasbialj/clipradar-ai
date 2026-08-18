@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ClipResult, CATEGORY_META } from "@/lib/ai/types";
 import { ScoreBreakdown } from "./ScoreBreakdown";
 import { HookGenerator } from "./HookGenerator";
@@ -43,10 +43,20 @@ export function ClipCard({ clip, videoTitle = "Video", videoUrl = "", isSelected
   const [detailTab, setDetailTab] = useState<"player" | "breakdown" | "hooks" | "captions" | "transcript">("player");
   const [copiedTitle, setCopiedTitle] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
+  const [localVideoUrl, setLocalVideoUrl] = useState<string | null>(null);
 
   const markerColor = scoreToMarkerColor(clip.score.total);
   const youtubeId = videoUrl ? getYouTubeVideoId(videoUrl) : null;
-  const localVideoUrl = videoFileStore.getObjectUrl();
+
+  useEffect(() => {
+    let active = true;
+    videoFileStore.getObjectUrl().then((url) => {
+      if (active) setLocalVideoUrl(url);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const copyTitle = async () => {
     await navigator.clipboard.writeText(clip.suggestedTitle);

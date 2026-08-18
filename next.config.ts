@@ -7,6 +7,9 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "i.ytimg.com" },
     ],
   },
+  experimental: {
+    cpus: 2,
+  },
 };
 
 export default nextConfig;
