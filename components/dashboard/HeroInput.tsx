@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { isValidYouTubeUrl } from "@/lib/utils";
+import { videoFileStore } from "@/lib/video/videoStore";
 
 export function HeroInput() {
   const router = useRouter();
@@ -33,6 +34,7 @@ export function HeroInput() {
       router.push(`/analyze?url=${encodeURIComponent(url.trim())}`);
     } else {
       if (!file) { setError("Please select a video file."); return; }
+      videoFileStore.setFile(file);
       // Store file name in session for the analyze page
       sessionStorage.setItem("uploadedFileName", file.name);
       sessionStorage.setItem("uploadedFileSize", String(file.size));
@@ -46,6 +48,7 @@ export function HeroInput() {
     const dropped = e.dataTransfer.files[0];
     if (dropped && dropped.type.startsWith("video/")) {
       setFile(dropped);
+      videoFileStore.setFile(dropped);
       setMode("file");
       setError("");
     } else {
