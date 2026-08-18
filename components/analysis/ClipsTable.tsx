@@ -1,14 +1,19 @@
 "use client";
 
+import { useState } from "react";
 import { ClipResult, CATEGORY_META } from "@/lib/ai/types";
 import { scoreToGradient, scoreToMarkerColor } from "@/lib/utils";
+import { Download, Eye } from "lucide-react";
+import { ExportModal } from "./ExportModal";
 
 interface Props {
   clips: ClipResult[];
+  videoTitle?: string;
   onSelectClip: (id: string) => void;
 }
 
-export function ClipsTable({ clips, onSelectClip }: Props) {
+export function ClipsTable({ clips, videoTitle = "Video", onSelectClip }: Props) {
+  const [selectedExportClip, setSelectedExportClip] = useState<ClipResult | null>(null);
   const top10 = clips.slice(0, 10);
 
   return (
@@ -28,7 +33,7 @@ export function ClipsTable({ clips, onSelectClip }: Props) {
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: "rgba(10,10,20,0.6)" }}>
-              {["Rank", "Timestamp", "Category", "Score", "Type", ""].map((h) => (
+              {["Rank", "Timestamp", "Category", "Score", "Type", "Actions"].map((h) => (
                 <th
                   key={h}
                   className="text-left text-[10px] font-semibold uppercase tracking-widest px-5 py-3"
@@ -42,7 +47,6 @@ export function ClipsTable({ clips, onSelectClip }: Props) {
           <tbody>
             {top10.map((clip, i) => {
               const color = scoreToMarkerColor(clip.score.total);
-              const primaryMeta = CATEGORY_META[clip.categories[0]];
 
               return (
                 <tr
@@ -139,18 +143,32 @@ export function ClipsTable({ clips, onSelectClip }: Props) {
                         : "60–90s"}
                     </span>
                   </td>
-                  {/* View button */}
+                  {/* Actions */}
                   <td className="px-5 py-3">
-                    <button
-                      className="text-[10px] px-3 py-1.5 rounded-lg transition-all"
-                      style={{
-                        background: "rgba(124,58,237,0.12)",
-                        border: "1px solid rgba(124,58,237,0.25)",
-                        color: "#9f60ff",
-                      }}
-                    >
-                      View Clip
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedExportClip(clip);
+                        }}
+                        className="btn-primary text-[11px] py-1.5 px-2.5 flex items-center gap-1 shadow-sm"
+                        title="Download 9:16 Video, SRT, TXT"
+                      >
+                        <Download size={12} />
+                        Download
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelectClip(clip.id);
+                        }}
+                        className="btn-ghost text-[11px] py-1 px-2 flex items-center gap-1"
+                        title="View Details"
+                      >
+                        <Eye size={12} />
+                        View
+                      </button>
+                    </div>
                   </td>
                 </tr>
               );
@@ -158,6 +176,16 @@ export function ClipsTable({ clips, onSelectClip }: Props) {
           </tbody>
         </table>
       </div>
+
+      {/* Export Modal */}
+      {selectedExportClip && (
+        <ExportModal
+          clip={selectedExportClip}
+          videoTitle={videoTitle}
+          isOpen={true}
+          onClose={() => setSelectedExportClip(null)}
+        />
+      )}
     </div>
   );
 }

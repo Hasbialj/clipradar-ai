@@ -5,6 +5,7 @@ import { ClipResult, CATEGORY_META } from "@/lib/ai/types";
 import { ScoreBreakdown } from "./ScoreBreakdown";
 import { HookGenerator } from "./HookGenerator";
 import { CaptionGenerator } from "./CaptionGenerator";
+import { ExportModal } from "./ExportModal";
 import {
   ChevronDown,
   ChevronUp,
@@ -21,6 +22,7 @@ import { clipDurationLabel, scoreToGradient, scoreToMarkerColor } from "@/lib/ut
 
 interface Props {
   clip: ClipResult;
+  videoTitle?: string;
   isSelected: boolean;
   onSelect: () => void;
 }
@@ -32,10 +34,11 @@ const DETAIL_TABS = [
   { key: "transcript", label: "Transcript", icon: AlignLeft },
 ] as const;
 
-export function ClipCard({ clip, isSelected, onSelect }: Props) {
+export function ClipCard({ clip, videoTitle = "Video", isSelected, onSelect }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [detailTab, setDetailTab] = useState<"breakdown" | "hooks" | "captions" | "transcript">("breakdown");
   const [copiedTitle, setCopiedTitle] = useState(false);
+  const [isExportOpen, setIsExportOpen] = useState(false);
 
   const markerColor = scoreToMarkerColor(clip.score.total);
 
@@ -129,33 +132,47 @@ export function ClipCard({ clip, isSelected, onSelect }: Props) {
             </div>
           </div>
 
-          {/* Score */}
-          <div className="flex flex-col items-end gap-1 flex-shrink-0">
-            <div
-              className={`text-3xl font-black font-mono bg-gradient-to-br ${scoreToGradient(clip.score.total)} bg-clip-text text-transparent`}
+          {/* Score & Direct Download */}
+          <div className="flex items-center gap-3 flex-shrink-0">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsExportOpen(true);
+              }}
+              className="btn-primary text-xs py-2 px-3 flex items-center gap-1.5 shadow-md shadow-purple-500/20"
+              title="Download 9:16 Video, SRT, TXT"
             >
-              {clip.score.total}
-            </div>
-            <div className="text-[10px]" style={{ color: "#55557a" }}>
-              viral score
-            </div>
-          </div>
+              <Download size={13} />
+              <span>Download</span>
+            </button>
 
-          {/* Expand toggle */}
-          <button
-            className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center transition-all"
-            style={{
-              background: "rgba(26,26,46,0.6)",
-              color: "#55557a",
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
-              setExpanded((p) => !p);
-              if (!expanded) onSelect();
-            }}
-          >
-            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </button>
+            <div className="flex flex-col items-end gap-0.5">
+              <div
+                className={`text-3xl font-black font-mono bg-gradient-to-br ${scoreToGradient(clip.score.total)} bg-clip-text text-transparent`}
+              >
+                {clip.score.total}
+              </div>
+              <div className="text-[10px]" style={{ color: "#55557a" }}>
+                viral score
+              </div>
+            </div>
+
+            {/* Expand toggle */}
+            <button
+              className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-all"
+              style={{
+                background: "rgba(26,26,46,0.6)",
+                color: "#8888aa",
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setExpanded((p) => !p);
+                if (!expanded) onSelect();
+              }}
+            >
+              {expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+            </button>
+          </div>
         </div>
 
         {/* Reason preview */}
@@ -201,8 +218,11 @@ export function ClipCard({ clip, isSelected, onSelect }: Props) {
                 <><Copy size={12} /> Copy Title</>
               )}
             </button>
-            <button className="btn-secondary text-xs py-1.5">
-              <Download size={12} /> Export Clip
+            <button
+              className="btn-primary text-xs py-1.5"
+              onClick={() => setIsExportOpen(true)}
+            >
+              <Download size={12} /> Download / Export Options
             </button>
             <div className="flex-1" />
             {/* Comment trigger */}
@@ -277,6 +297,14 @@ export function ClipCard({ clip, isSelected, onSelect }: Props) {
           </div>
         </div>
       )}
+
+      {/* Export & Download Modal */}
+      <ExportModal
+        clip={clip}
+        videoTitle={videoTitle}
+        isOpen={isExportOpen}
+        onClose={() => setIsExportOpen(false)}
+      />
     </div>
   );
 }

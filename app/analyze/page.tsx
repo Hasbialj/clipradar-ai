@@ -326,6 +326,7 @@ function AnalyzePage() {
                     <ClipCard
                       key={clip.id}
                       clip={clip}
+                      videoTitle={result.videoMetadata.title}
                       isSelected={selectedClipId === clip.id}
                       onSelect={() => setSelectedClipId(clip.id)}
                     />
@@ -334,6 +335,7 @@ function AnalyzePage() {
               ) : (
                 <ClipsTable
                   clips={filteredClips}
+                  videoTitle={result.videoMetadata.title}
                   onSelectClip={handleSelectClip}
                 />
               )}
