@@ -4,15 +4,16 @@ import { useState } from "react";
 import { ClipResult, CATEGORY_META } from "@/lib/ai/types";
 import { scoreToGradient, scoreToMarkerColor } from "@/lib/utils";
 import { Download, Eye } from "lucide-react";
-import { ExportModal } from "./ExportModal";
+import { VizardStudioModal } from "@/components/editor/VizardStudioModal";
 
 interface Props {
   clips: ClipResult[];
   videoTitle?: string;
+  videoUrl?: string;
   onSelectClip: (id: string) => void;
 }
 
-export function ClipsTable({ clips, videoTitle = "Video", onSelectClip }: Props) {
+export function ClipsTable({ clips, videoTitle = "Video", videoUrl = "", onSelectClip }: Props) {
   const [selectedExportClip, setSelectedExportClip] = useState<ClipResult | null>(null);
   const top10 = clips.slice(0, 10);
 
@@ -46,127 +47,59 @@ export function ClipsTable({ clips, videoTitle = "Video", onSelectClip }: Props)
           </thead>
           <tbody>
             {top10.map((clip, i) => {
-              const color = scoreToMarkerColor(clip.score.total);
+              const markerColor = scoreToMarkerColor(clip.score.total);
+              const meta = CATEGORY_META[clip.categories[0]];
 
               return (
                 <tr
                   key={clip.id}
-                  className="cursor-pointer transition-all"
+                  className="hover:bg-[#1a1a2e]/60 transition-colors cursor-pointer"
                   style={{
                     background: i % 2 === 0 ? "transparent" : "rgba(10,10,20,0.3)",
                     borderBottom: "1px solid rgba(30,30,58,0.5)",
                   }}
-                  onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLTableRowElement).style.background = "rgba(124,58,237,0.08)";
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLTableRowElement).style.background =
-                      i % 2 === 0 ? "transparent" : "rgba(10,10,20,0.3)";
-                  }}
                   onClick={() => onSelectClip(clip.id)}
                 >
-                  {/* Rank */}
-                  <td className="px-5 py-3">
-                    <span
-                      className="text-sm font-bold font-mono"
-                      style={{ color }}
-                    >
-                      #{clip.rank}
-                    </span>
+                  <td className="px-5 py-3.5 text-xs font-mono font-bold" style={{ color: markerColor }}>
+                    #{clip.rank}
                   </td>
-                  {/* Timestamp */}
-                  <td className="px-5 py-3">
-                    <span
-                      className="text-xs font-mono"
-                      style={{ color: "#8888aa" }}
-                    >
-                      {clip.startTime.slice(-5)} – {clip.endTime.slice(-5)}
-                    </span>
+                  <td className="px-5 py-3.5 text-xs font-mono" style={{ color: "#8888aa" }}>
+                    {clip.startTime} – {clip.endTime}
                   </td>
-                  {/* Category */}
-                  <td className="px-5 py-3">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {clip.categories.slice(0, 2).map((cat) => {
-                        const meta = CATEGORY_META[cat];
-                        return (
-                          <span
-                            key={cat}
-                            className={`category-chip ${meta.bg} ${meta.color}`}
-                            style={{ fontSize: 10 }}
-                          >
-                            {meta.emoji} {meta.label}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  </td>
-                  {/* Score */}
-                  <td className="px-5 py-3">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`text-base font-black font-mono bg-gradient-to-r ${scoreToGradient(clip.score.total)} bg-clip-text text-transparent`}
-                      >
-                        {clip.score.total}
+                  <td className="px-5 py-3.5 text-xs">
+                    {meta && (
+                      <span className={`category-chip ${meta.bg} ${meta.color}`}>
+                        {meta.emoji} {meta.label}
                       </span>
-                      <div
-                        className="flex-1 h-1 rounded-full overflow-hidden"
-                        style={{
-                          background: "rgba(26,26,46,0.8)",
-                          width: 48,
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: `${clip.score.total}%`,
-                            height: "100%",
-                            background: color,
-                            borderRadius: 9999,
-                          }}
-                        />
-                      </div>
-                    </div>
+                    )}
                   </td>
-                  {/* Duration type */}
-                  <td className="px-5 py-3">
+                  <td className="px-5 py-3.5">
                     <span
-                      className="text-[10px] px-2.5 py-1 rounded-full"
-                      style={{
-                        background: "rgba(26,26,46,0.8)",
-                        border: "1px solid #1e1e3a",
-                        color: "#55557a",
-                      }}
+                      className={`text-sm font-black font-mono bg-gradient-to-br ${scoreToGradient(clip.score.total)} bg-clip-text text-transparent`}
                     >
-                      {clip.duration === "short"
-                        ? "15–30s"
-                        : clip.duration === "medium"
-                        ? "30–60s"
-                        : "60–90s"}
+                      {clip.score.total}
                     </span>
                   </td>
-                  {/* Actions */}
-                  <td className="px-5 py-3">
-                    <div className="flex items-center gap-2">
+                  <td className="px-5 py-3.5 text-xs" style={{ color: "#8888aa" }}>
+                    {meta?.label || clip.categories[0]}
+                  </td>
+                  <td className="px-5 py-3.5">
+                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedExportClip(clip);
-                        }}
-                        className="btn-primary text-[11px] py-1.5 px-2.5 flex items-center gap-1 shadow-sm"
-                        title="Download 9:16 Video, SRT, TXT"
+                        onClick={() => setSelectedExportClip(clip)}
+                        className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5 shadow-sm"
+                        title="Open Vizard Studio"
                       >
                         <Download size={12} />
-                        Download
+                        <span>Export</span>
                       </button>
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onSelectClip(clip.id);
-                        }}
-                        className="btn-ghost text-[11px] py-1 px-2 flex items-center gap-1"
-                        title="View Details"
+                        onClick={() => onSelectClip(clip.id)}
+                        className="btn-secondary text-xs py-1.5 px-3 flex items-center gap-1.5"
+                        title="View details"
                       >
                         <Eye size={12} />
-                        View
+                        <span>View</span>
                       </button>
                     </div>
                   </td>
@@ -177,11 +110,12 @@ export function ClipsTable({ clips, videoTitle = "Video", onSelectClip }: Props)
         </table>
       </div>
 
-      {/* Export Modal */}
+      {/* Vizard Studio Export Modal */}
       {selectedExportClip && (
-        <ExportModal
+        <VizardStudioModal
           clip={selectedExportClip}
           videoTitle={videoTitle}
+          videoUrl={videoUrl}
           isOpen={true}
           onClose={() => setSelectedExportClip(null)}
         />

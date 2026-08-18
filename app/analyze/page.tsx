@@ -337,6 +337,7 @@ function AnalyzePage() {
                 <ClipsTable
                   clips={filteredClips}
                   videoTitle={result.videoMetadata.title}
+                  videoUrl={result.videoMetadata.url}
                   onSelectClip={handleSelectClip}
                 />
               )}

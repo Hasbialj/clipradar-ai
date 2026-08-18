@@ -5,7 +5,7 @@ import { ClipResult, CATEGORY_META } from "@/lib/ai/types";
 import { ScoreBreakdown } from "./ScoreBreakdown";
 import { HookGenerator } from "./HookGenerator";
 import { CaptionGenerator } from "./CaptionGenerator";
-import { ExportModal } from "./ExportModal";
+import { VizardStudioModal } from "@/components/editor/VizardStudioModal";
 import { videoFileStore } from "@/lib/video/videoStore";
 import {
   ChevronDown,
@@ -362,10 +362,11 @@ export function ClipCard({ clip, videoTitle = "Video", videoUrl = "", isSelected
         </div>
       )}
 
-      {/* Export & Download Modal */}
-      <ExportModal
+      {/* Vizard Video Studio & Download Modal */}
+      <VizardStudioModal
         clip={clip}
         videoTitle={videoTitle}
+        videoUrl={videoUrl}
         isOpen={isExportOpen}
         onClose={() => setIsExportOpen(false)}
       />
