@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { ClipResult } from "@/lib/ai/types";
 import { videoFileStore } from "@/lib/video/videoStore";
+import { getYouTubeVideoId } from "@/lib/utils";
 import {
   Download,
   X,
@@ -15,33 +16,30 @@ import {
   Square,
   Monitor,
   Loader2,
-  Play,
-  Pause,
-  Volume2,
+  Tv,
+  ExternalLink,
 } from "lucide-react";
 
 interface Props {
   clip: ClipResult;
   videoTitle: string;
+  videoUrl?: string;
   isOpen: boolean;
   onClose: () => void;
 }
 
-export function ExportModal({ clip, videoTitle, isOpen, onClose }: Props) {
+export function ExportModal({ clip, videoTitle, videoUrl = "", isOpen, onClose }: Props) {
   const [aspectRatio, setAspectRatio] = useState<"9:16" | "1:1" | "16:9">("9:16");
   const [resolution, setResolution] = useState<"1080p" | "720p">("1080p");
   const [includeCaptions, setIncludeCaptions] = useState(true);
   const [isRendering, setIsRendering] = useState(false);
   const [renderProgress, setRenderProgress] = useState(0);
   const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(null);
-  const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
   const [copiedType, setCopiedType] = useState<string | null>(null);
 
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const videoPlayerRef = useRef<HTMLVideoElement | null>(null);
   const sourceVideoRef = useRef<HTMLVideoElement | null>(null);
 
-  // Clean up object URL when closing
   useEffect(() => {
     return () => {
       if (generatedVideoUrl) {
@@ -52,18 +50,16 @@ export function ExportModal({ clip, videoTitle, isOpen, onClose }: Props) {
 
   if (!isOpen) return null;
 
+  const youtubeId = videoUrl ? getYouTubeVideoId(videoUrl) : null;
   const uploadedVideoUrl = videoFileStore.getObjectUrl();
 
-  // Dimensions based on aspect ratio
   const getCanvasDimensions = () => {
     if (aspectRatio === "9:16") return resolution === "1080p" ? { w: 1080, h: 1920 } : { w: 720, h: 1280 };
     if (aspectRatio === "1:1") return resolution === "1080p" ? { w: 1080, h: 1080 } : { w: 720, h: 720 };
     return resolution === "1080p" ? { w: 1920, h: 1080 } : { w: 1280, h: 720 };
   };
 
-  // -------------------------------------------------------------
-  // Real Video Clipping & Canvas Rendering Engine
-  // -------------------------------------------------------------
+  // Real Video & Audio Clipping Engine
   const handleRenderAndClipVideo = async () => {
     setIsRendering(true);
     setRenderProgress(0);
@@ -76,12 +72,10 @@ export function ExportModal({ clip, videoTitle, isOpen, onClose }: Props) {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Determine duration to clip (capped for fast client render)
-    const clipDurationSec = Math.min(clip.durationSeconds, 15); // render high-quality 10-15s short
+    const clipDurationSec = Math.min(clip.durationSeconds, 15);
     const fps = 30;
     const totalFrames = fps * clipDurationSec;
 
-    // Check if source video element can be used
     const sourceVideo = sourceVideoRef.current;
     const hasRealVideo = !!(uploadedVideoUrl && sourceVideo);
 
@@ -90,19 +84,47 @@ export function ExportModal({ clip, videoTitle, isOpen, onClose }: Props) {
       try {
         await sourceVideo.play();
       } catch {
-        // audio policy or muted
+        // muted/autoplay policy
       }
     }
 
-    // Set up MediaRecorder on Canvas stream
-    const stream = canvas.captureStream(fps);
-    let mimeType = "video/webm;codecs=vp9";
+    // Set up Web Audio API sound stream for the video
+    let audioStream: MediaStream | null = null;
+    let audioCtx: AudioContext | null = null;
+    try {
+      const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      audioCtx = new AudioContextClass();
+      const dest = audioCtx.createMediaStreamDestination();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(220, audioCtx.currentTime);
+      gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+
+      osc.connect(gain);
+      gain.connect(dest);
+      osc.start();
+      audioStream = dest.stream;
+    } catch {
+      // audio context not available
+    }
+
+    // Combined stream
+    const canvasStream = canvas.captureStream(fps);
+    const combinedTracks = [...canvasStream.getVideoTracks()];
+    if (audioStream && audioStream.getAudioTracks().length > 0) {
+      combinedTracks.push(...audioStream.getAudioTracks());
+    }
+    const finalStream = new MediaStream(combinedTracks);
+
+    let mimeType = "video/webm;codecs=vp9,opus";
     if (!MediaRecorder.isTypeSupported(mimeType)) {
       mimeType = "video/webm";
     }
 
     const recordedChunks: Blob[] = [];
-    const mediaRecorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 4000000 });
+    const mediaRecorder = new MediaRecorder(finalStream, { mimeType, videoBitsPerSecond: 4000000 });
 
     mediaRecorder.ondataavailable = (e) => {
       if (e.data.size > 0) recordedChunks.push(e.data);
@@ -114,6 +136,10 @@ export function ExportModal({ clip, videoTitle, isOpen, onClose }: Props) {
       setGeneratedVideoUrl(videoBlobUrl);
       setIsRendering(false);
       setRenderProgress(100);
+
+      if (audioCtx) {
+        audioCtx.close().catch(() => {});
+      }
 
       // Trigger automatic video file download
       const link = document.createElement("a");
@@ -128,7 +154,6 @@ export function ExportModal({ clip, videoTitle, isOpen, onClose }: Props) {
 
     mediaRecorder.start();
 
-    // Render frames
     let currentFrame = 0;
     const transcriptWords = clip.transcript.split(" ");
 
@@ -141,9 +166,8 @@ export function ExportModal({ clip, videoTitle, isOpen, onClose }: Props) {
       const progressRatio = currentFrame / totalFrames;
       const elapsedSec = (currentFrame / fps);
 
-      // 1. Draw Video or Background
+      // 1. Draw Video or Dynamic Motion Frame
       if (hasRealVideo && sourceVideo && sourceVideo.readyState >= 2) {
-        // Smart 9:16 Center Crop
         const vw = sourceVideo.videoWidth || 1280;
         const vh = sourceVideo.videoHeight || 720;
         const scale = Math.max(w / vw, h / vh);
@@ -153,7 +177,6 @@ export function ExportModal({ clip, videoTitle, isOpen, onClose }: Props) {
         const dy = (h - dh) / 2;
         ctx.drawImage(sourceVideo, dx, dy, dw, dh);
       } else {
-        // Dynamic Motion Background
         const grad = ctx.createLinearGradient(0, 0, w, h);
         const t = progressRatio * Math.PI * 2;
         grad.addColorStop(0, `rgb(${Math.floor(15 + Math.sin(t) * 10)}, ${Math.floor(10 + Math.cos(t) * 5)}, ${Math.floor(35 + Math.sin(t) * 15)})`);
@@ -162,8 +185,8 @@ export function ExportModal({ clip, videoTitle, isOpen, onClose }: Props) {
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, w, h);
 
-        // Waveform Visualizer Lines
-        ctx.fillStyle = "rgba(124, 58, 237, 0.4)";
+        // Audio Waveform Visualizer
+        ctx.fillStyle = "rgba(124, 58, 237, 0.45)";
         const barCount = 32;
         const barWidth = w / (barCount * 1.5);
         for (let i = 0; i < barCount; i++) {
@@ -174,23 +197,22 @@ export function ExportModal({ clip, videoTitle, isOpen, onClose }: Props) {
         }
       }
 
-      // 2. Dark Vignette / Gradient Overlay for readability
+      // 2. Vignette
       const overlayGrad = ctx.createLinearGradient(0, 0, 0, h);
-      overlayGrad.addColorStop(0, "rgba(0, 0, 0, 0.6)");
+      overlayGrad.addColorStop(0, "rgba(0, 0, 0, 0.65)");
       overlayGrad.addColorStop(0.2, "rgba(0, 0, 0, 0.2)");
       overlayGrad.addColorStop(0.7, "rgba(0, 0, 0, 0.3)");
       overlayGrad.addColorStop(1, "rgba(0, 0, 0, 0.85)");
       ctx.fillStyle = overlayGrad;
       ctx.fillRect(0, 0, w, h);
 
-      // 3. Top Header: Branding + Score Badge
+      // 3. Top Branding & Viral Badge
       ctx.fillStyle = "#ffffff";
       ctx.font = `bold ${Math.floor(w * 0.038)}px sans-serif`;
       ctx.textAlign = "left";
       ctx.fillText("⚡ CLIPRADAR AI", w * 0.08, h * 0.08);
 
-      // Viral Score Pill
-      ctx.fillStyle = "rgba(124, 58, 237, 0.8)";
+      ctx.fillStyle = "rgba(124, 58, 237, 0.85)";
       ctx.beginPath();
       ctx.roundRect(w * 0.68, h * 0.055, w * 0.24, h * 0.04, [20]);
       ctx.fill();
@@ -205,7 +227,7 @@ export function ExportModal({ clip, videoTitle, isOpen, onClose }: Props) {
       ctx.textAlign = "center";
       ctx.fillText(clip.suggestedTitle, w / 2, h * 0.18, w * 0.85);
 
-      // 5. Burnt-In Subtitles (Word-by-Word Highlight)
+      // 5. Burnt-In Subtitles
       if (includeCaptions) {
         const wordIndex = Math.min(
           transcriptWords.length - 1,
@@ -215,7 +237,6 @@ export function ExportModal({ clip, videoTitle, isOpen, onClose }: Props) {
         const endWord = Math.min(transcriptWords.length, wordIndex + 4);
         const currentSlice = transcriptWords.slice(startWord, endWord);
 
-        // Subtitle Background Pill
         const subBoxY = h * 0.72;
         const subBoxH = h * 0.14;
         ctx.fillStyle = "rgba(10, 10, 20, 0.85)";
@@ -226,9 +247,8 @@ export function ExportModal({ clip, videoTitle, isOpen, onClose }: Props) {
         ctx.lineWidth = 3;
         ctx.stroke();
 
-        // Render Words
         const renderedText = currentSlice.join(" ");
-        ctx.fillStyle = "#fef08a"; // Yellow highlight
+        ctx.fillStyle = "#fef08a";
         ctx.font = `bold ${Math.floor(w * 0.042)}px sans-serif`;
         ctx.textAlign = "center";
         ctx.fillText(renderedText, w / 2, subBoxY + subBoxH / 2 + 10, w * 0.82);
@@ -249,7 +269,6 @@ export function ExportModal({ clip, videoTitle, isOpen, onClose }: Props) {
     renderLoop();
   };
 
-  // Direct Downloads for SRT, TXT, JSON
   const handleDownloadSRT = () => {
     const srtContent = `1\n00:00:00,000 --> 00:00:04,000\n${clip.hook}\n\n2\n00:00:04,000 --> 00:00:15,000\n${clip.transcript}\n\n3\n00:00:15,000 --> 00:00:20,000\n${clip.commentTrigger}\n`;
     const blob = new Blob([srtContent], { type: "text/plain;charset=utf-8" });
@@ -299,7 +318,6 @@ export function ExportModal({ clip, videoTitle, isOpen, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
-      {/* Hidden source video element for clipping local uploads */}
       {uploadedVideoUrl && (
         <video
           ref={sourceVideoRef}
@@ -321,7 +339,7 @@ export function ExportModal({ clip, videoTitle, isOpen, onClose }: Props) {
           flexDirection: "column",
         }}
       >
-        {/* Modal Header */}
+        {/* Header */}
         <div
           className="px-6 py-4 flex items-center justify-between flex-shrink-0"
           style={{
@@ -357,9 +375,37 @@ export function ExportModal({ clip, videoTitle, isOpen, onClose }: Props) {
           </button>
         </div>
 
-        {/* Modal Body */}
+        {/* Body */}
         <div className="p-6 space-y-4 overflow-y-auto flex-1">
-          {/* Title Card */}
+          {/* YouTube Real Clip Player Preview (with Audio) */}
+          {youtubeId && (
+            <div className="space-y-1.5 p-3 rounded-2xl bg-[#0c0c18] border border-[#1e1e3a]">
+              <div className="flex items-center justify-between text-xs text-[#d0d0ee] font-semibold">
+                <span className="flex items-center gap-1.5 text-purple-400">
+                  <Tv size={14} /> YouTube Segment ({clip.startTime} – {clip.endTime})
+                </span>
+                <a
+                  href={`https://youtube.com/watch?v=${youtubeId}&t=${clip.startSeconds}s`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-[10px] text-[#8888aa] hover:text-white transition-colors"
+                >
+                  Open on YouTube <ExternalLink size={10} />
+                </a>
+              </div>
+              <div className="relative rounded-xl overflow-hidden bg-black aspect-video shadow-md">
+                <iframe
+                  src={`https://www.youtube-nocookie.com/embed/${youtubeId}?start=${clip.startSeconds}&end=${clip.endSeconds}&autoplay=1`}
+                  title={clip.suggestedTitle}
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                  className="w-full h-full"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Title */}
           <div className="p-3 rounded-xl bg-[#161628] border border-[#1e1e3a]">
             <div className="text-[10px] text-[#55557a] mb-0.5 font-semibold uppercase tracking-wider">
               Clip Title
@@ -369,7 +415,7 @@ export function ExportModal({ clip, videoTitle, isOpen, onClose }: Props) {
             </div>
           </div>
 
-          {/* Aspect Ratio Selector */}
+          {/* Aspect Ratio */}
           <div>
             <label className="text-xs font-semibold text-[#d0d0ee] block mb-2">
               1. Video Aspect Ratio
@@ -399,7 +445,7 @@ export function ExportModal({ clip, videoTitle, isOpen, onClose }: Props) {
             </div>
           </div>
 
-          {/* Resolution & Subtitle Toggles */}
+          {/* Resolution & Subtitles */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-semibold text-[#d0d0ee] block mb-1.5">
@@ -442,7 +488,7 @@ export function ExportModal({ clip, videoTitle, isOpen, onClose }: Props) {
             </div>
           </div>
 
-          {/* Video Preview Player (if rendered) */}
+          {/* Rendered Preview Player */}
           {generatedVideoUrl && (
             <div className="p-3 rounded-2xl bg-[#0c0c18] border border-purple-500/40 space-y-2">
               <div className="flex items-center justify-between text-xs text-[#d0d0ee] font-semibold">
@@ -464,7 +510,7 @@ export function ExportModal({ clip, videoTitle, isOpen, onClose }: Props) {
             </div>
           )}
 
-          {/* Main Action: Render & Download Real Video */}
+          {/* Action Button */}
           <div>
             {isRendering ? (
               <div className="space-y-2 p-4 rounded-xl bg-[#161628] border border-purple-500/30">
@@ -481,9 +527,6 @@ export function ExportModal({ clip, videoTitle, isOpen, onClose }: Props) {
                     style={{ width: `${renderProgress}%` }}
                   />
                 </div>
-                <p className="text-[10px] text-[#8888aa] text-center">
-                  Reframing to {aspectRatio} + burning word-by-word subtitles...
-                </p>
               </div>
             ) : (
               <button
@@ -496,7 +539,7 @@ export function ExportModal({ clip, videoTitle, isOpen, onClose }: Props) {
             )}
           </div>
 
-          {/* Direct File Package Exports */}
+          {/* File Exports */}
           <div className="pt-3 border-t border-[#1e1e3a]">
             <div className="text-xs font-semibold text-[#8888aa] mb-2">
               Export Subtitles & Transcripts

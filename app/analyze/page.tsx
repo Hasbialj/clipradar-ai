@@ -327,6 +327,7 @@ function AnalyzePage() {
                       key={clip.id}
                       clip={clip}
                       videoTitle={result.videoMetadata.title}
+                      videoUrl={result.videoMetadata.url}
                       isSelected={selectedClipId === clip.id}
                       onSelect={() => setSelectedClipId(clip.id)}
                     />

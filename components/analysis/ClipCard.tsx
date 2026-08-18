@@ -6,6 +6,7 @@ import { ScoreBreakdown } from "./ScoreBreakdown";
 import { HookGenerator } from "./HookGenerator";
 import { CaptionGenerator } from "./CaptionGenerator";
 import { ExportModal } from "./ExportModal";
+import { videoFileStore } from "@/lib/video/videoStore";
 import {
   ChevronDown,
   ChevronUp,
@@ -17,30 +18,35 @@ import {
   MessageSquare,
   Sparkles,
   AlignLeft,
+  Tv,
 } from "lucide-react";
-import { clipDurationLabel, scoreToGradient, scoreToMarkerColor } from "@/lib/utils";
+import { clipDurationLabel, getYouTubeVideoId, scoreToGradient, scoreToMarkerColor } from "@/lib/utils";
 
 interface Props {
   clip: ClipResult;
   videoTitle?: string;
+  videoUrl?: string;
   isSelected: boolean;
   onSelect: () => void;
 }
 
 const DETAIL_TABS = [
+  { key: "player", label: "Watch Clip", icon: Tv },
   { key: "breakdown", label: "Score Breakdown", icon: Sparkles },
   { key: "hooks", label: "Hooks", icon: Play },
   { key: "captions", label: "Captions", icon: MessageSquare },
   { key: "transcript", label: "Transcript", icon: AlignLeft },
 ] as const;
 
-export function ClipCard({ clip, videoTitle = "Video", isSelected, onSelect }: Props) {
+export function ClipCard({ clip, videoTitle = "Video", videoUrl = "", isSelected, onSelect }: Props) {
   const [expanded, setExpanded] = useState(false);
-  const [detailTab, setDetailTab] = useState<"breakdown" | "hooks" | "captions" | "transcript">("breakdown");
+  const [detailTab, setDetailTab] = useState<"player" | "breakdown" | "hooks" | "captions" | "transcript">("player");
   const [copiedTitle, setCopiedTitle] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
 
   const markerColor = scoreToMarkerColor(clip.score.total);
+  const youtubeId = videoUrl ? getYouTubeVideoId(videoUrl) : null;
+  const localVideoUrl = videoFileStore.getObjectUrl();
 
   const copyTitle = async () => {
     await navigator.clipboard.writeText(clip.suggestedTitle);
@@ -270,6 +276,54 @@ export function ClipCard({ clip, videoTitle = "Video", isSelected, onSelect }: P
             </div>
 
             <div className="pb-5">
+              {detailTab === "player" && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-xs text-[#8888aa]">
+                    <span className="font-semibold text-[#f0f0ff]">
+                      🎬 Playing Clip: {clip.startTime} – {clip.endTime}
+                    </span>
+                    <span className="font-mono text-purple-400 font-bold">
+                      {clip.durationSeconds}s segment
+                    </span>
+                  </div>
+
+                  {/* Real YouTube Player with audio & video */}
+                  {youtubeId ? (
+                    <div className="relative rounded-2xl overflow-hidden bg-black border border-[#1e1e3a] aspect-video shadow-2xl">
+                      <iframe
+                        src={`https://www.youtube-nocookie.com/embed/${youtubeId}?start=${clip.startSeconds}&end=${clip.endSeconds}&autoplay=1&enablejsapi=1`}
+                        title={clip.suggestedTitle}
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                        className="w-full h-full"
+                      />
+                    </div>
+                  ) : localVideoUrl ? (
+                    <div className="relative rounded-2xl overflow-hidden bg-black border border-[#1e1e3a] aspect-video shadow-2xl">
+                      <video
+                        src={localVideoUrl}
+                        controls
+                        autoPlay
+                        className="w-full h-full"
+                        onLoadedMetadata={(e) => {
+                          (e.target as HTMLVideoElement).currentTime = clip.startSeconds;
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <div className="p-8 rounded-2xl bg-[#161628] border border-[#1e1e3a] text-center space-y-2">
+                      <div className="text-3xl mb-1">🎬</div>
+                      <div className="text-sm font-bold text-[#f0f0ff]">
+                        YouTube Video Segment: {clip.startTime} – {clip.endTime}
+                      </div>
+                      <p className="text-xs text-[#8888aa] max-w-md mx-auto">
+                        Untuk memutar YouTube langsung di tab ini, pastikan URL YouTube dimasukkan di dashboard (contoh: https://www.youtube.com/watch?v=...).
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {detailTab === "breakdown" && <ScoreBreakdown score={clip.score} />}
               {detailTab === "hooks" && <HookGenerator clip={clip} />}
               {detailTab === "captions" && <CaptionGenerator clip={clip} />}
