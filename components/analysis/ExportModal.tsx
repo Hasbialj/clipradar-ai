@@ -89,35 +89,43 @@ export function ExportModal({ clip, videoTitle, videoUrl = "", isOpen, onClose }
     const sourceVideo = sourceVideoRef.current;
     const hasRealVideo = !!(uploadedVideoUrl && sourceVideo);
 
+    // Set up Web Audio API sound stream for the video
+    let audioStream: MediaStream | null = null;
+    let audioCtx: AudioContext | null = null;
+
     if (hasRealVideo && sourceVideo) {
       sourceVideo.currentTime = clip.startSeconds;
       try {
         await sourceVideo.play();
-      } catch {
-        // muted/autoplay policy
+        const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        audioCtx = new AudioContextClass();
+        const srcNode = audioCtx.createMediaElementSource(sourceVideo);
+        const dest = audioCtx.createMediaStreamDestination();
+        srcNode.connect(dest);
+        srcNode.connect(audioCtx.destination);
+        audioStream = dest.stream;
+      } catch (audioErr) {
+        console.warn("Direct audio capture:", audioErr);
       }
-    }
+    } else {
+      try {
+        const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        audioCtx = new AudioContextClass();
+        const dest = audioCtx.createMediaStreamDestination();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
 
-    // Set up Web Audio API sound stream for the video
-    let audioStream: MediaStream | null = null;
-    let audioCtx: AudioContext | null = null;
-    try {
-      const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      audioCtx = new AudioContextClass();
-      const dest = audioCtx.createMediaStreamDestination();
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(220, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
 
-      osc.type = "triangle";
-      osc.frequency.setValueAtTime(220, audioCtx.currentTime);
-      gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
-
-      osc.connect(gain);
-      gain.connect(dest);
-      osc.start();
-      audioStream = dest.stream;
-    } catch {
-      // audio context not available
+        osc.connect(gain);
+        gain.connect(dest);
+        osc.start();
+        audioStream = dest.stream;
+      } catch {
+        // audio context not available
+      }
     }
 
     // Combined stream
@@ -333,8 +341,17 @@ export function ExportModal({ clip, videoTitle, videoUrl = "", isOpen, onClose }
           ref={sourceVideoRef}
           src={uploadedVideoUrl}
           playsInline
-          muted
-          className="hidden"
+          muted={false}
+          crossOrigin="anonymous"
+          style={{
+            position: "fixed",
+            top: -9999,
+            left: -9999,
+            width: 640,
+            height: 360,
+            opacity: 0.001,
+            pointerEvents: "none",
+          }}
         />
       )}
 
@@ -387,6 +404,29 @@ export function ExportModal({ clip, videoTitle, videoUrl = "", isOpen, onClose }
 
         {/* Body */}
         <div className="p-6 space-y-4 overflow-y-auto flex-1">
+          {/* Source Status Badge */}
+          <div
+            className="flex items-center justify-between px-3 py-2 rounded-xl text-xs"
+            style={{
+              background: uploadedVideoUrl
+                ? "rgba(34,197,94,0.12)"
+                : "rgba(124,58,237,0.12)",
+              border: `1px solid ${
+                uploadedVideoUrl ? "rgba(34,197,94,0.3)" : "rgba(124,58,237,0.3)"
+              }`,
+            }}
+          >
+            <span className="flex items-center gap-2 font-medium" style={{ color: uploadedVideoUrl ? "#4ade80" : "#c084fc" }}>
+              <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: uploadedVideoUrl ? "#22c55e" : "#a855f7" }} />
+              {uploadedVideoUrl
+                ? "Local Video File Connected (Direct Video & Audio Cut)"
+                : "YouTube Stream Connected (Live Player & Motion Video)"}
+            </span>
+            <span className="text-[10px] text-[#8888aa] font-mono">
+              {clip.durationSeconds}s cut
+            </span>
+          </div>
+
           {/* YouTube Real Clip Player Preview (with Audio) */}
           {youtubeId && (
             <div className="space-y-1.5 p-3 rounded-2xl bg-[#0c0c18] border border-[#1e1e3a]">
